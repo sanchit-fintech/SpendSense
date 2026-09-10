@@ -183,8 +183,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------
-# BUDGET
+# MONTH + BUDGET
 # --------------------------------------------------
+
+st.subheader("📅 Choose Your Month")
+
+selected_month = st.date_input(
+    "Select any date from the month you want to view",
+    value=date.today()
+)
+
+selected_month_start = selected_month.replace(day=1)
 
 st.subheader("🎯 Monthly Budget")
 
@@ -200,6 +209,15 @@ budget = st.number_input(
 # --------------------------------------------------
 
 df = load_expenses()
+
+if not df.empty:
+
+    df["Date"] = pd.to_datetime(df["Date"])
+
+    df = df[
+        (df["Date"].dt.year == selected_month.year)
+        & (df["Date"].dt.month == selected_month.month)
+    ]
 
 total_spent = df["Amount"].sum() if not df.empty else 0
 remaining = budget - total_spent
