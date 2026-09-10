@@ -309,6 +309,76 @@ if budget > 0:
             f"You've used {percentage_used:.1f}% of your budget. "
             "BRO. PUT THE WALLET DOWN. 💀"
         )
+# --------------------------------------------------
+# DAILY SPENDING LIMIT
+# --------------------------------------------------
+
+st.write("")
+st.subheader("🎯 Your Spending Limit")
+
+today = date.today()
+
+# Number of days remaining including today
+next_month = (
+    today.replace(day=28) + pd.Timedelta(days=4)
+).replace(day=1)
+
+last_day = next_month - pd.Timedelta(days=1)
+
+days_remaining = (last_day - today).days + 1
+
+if days_remaining > 0:
+    daily_limit = max(remaining / days_remaining, 0)
+else:
+    daily_limit = max(remaining, 0)
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric(
+        "💰 Money Left",
+        f"₹{max(remaining, 0):,.0f}"
+    )
+
+with col2:
+    st.metric(
+        "📅 Days Left",
+        days_remaining
+    )
+
+with col3:
+    st.metric(
+        "🎯 Safe to Spend / Day",
+        f"₹{daily_limit:,.0f}"
+    )
+
+if remaining < 0:
+
+    st.error(
+        "💀 You've already crossed your budget. "
+        "Time to enter financial survival mode."
+    )
+
+elif daily_limit < 100:
+
+    st.warning(
+        f"😭 Keep it tight. You can spend roughly "
+        f"₹{daily_limit:,.0f} per day for the rest of the month."
+    )
+
+elif daily_limit < 200:
+
+    st.info(
+        f"👀 You can spend roughly ₹{daily_limit:,.0f} per day "
+        "and stay within your budget."
+    )
+
+else:
+
+    st.success(
+        f"😎 You're in a comfortable zone. "
+        f"You can spend about ₹{daily_limit:,.0f} per day."
+    )
 
 # --------------------------------------------------
 # ADD EXPENSE
@@ -373,13 +443,13 @@ if st.button("Add Expense 🚀"):
         st.warning("Enter an amount first.")
 
 # --------------------------------------------------
-# INSIGHTS
+# SMART INSIGHTS
 # --------------------------------------------------
 
 if not df.empty:
 
     st.write("")
-    st.subheader("🧠 Quick Insight")
+    st.subheader("🧠 SpendSense Insights")
 
     category_totals = (
         df.groupby("Category")["Amount"]
@@ -390,11 +460,63 @@ if not df.empty:
     top_category = category_totals.index[0]
     top_amount = category_totals.iloc[0]
 
-    st.info(
-        f"👀 Your biggest spending category is "
-        f"**{top_category}** at **₹{top_amount:,.0f}**."
-    )
+    # Daily spending
+    today = date.today()
+    days_elapsed = today.day
+    average_daily_spend = total_spent / days_elapsed
 
+    # Monthly projection
+    projected_spending = average_daily_spend * 30
+
+    # Insight cards
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "🔥 Biggest Category",
+            top_category,
+            f"₹{top_amount:,.0f}"
+        )
+
+    with col2:
+        st.metric(
+            "📅 Daily Average",
+            f"₹{average_daily_spend:,.0f}"
+        )
+
+    with col3:
+        st.metric(
+            "🔮 Monthly Projection",
+            f"₹{projected_spending:,.0f}"
+        )
+
+    # Personalized message
+    if budget > 0:
+
+        if projected_spending <= budget * 0.8:
+
+            st.success(
+                f"😎 You're on a comfortable pace. "
+                f"At this rate, you'd spend about "
+                f"₹{projected_spending:,.0f} this month."
+            )
+
+        elif projected_spending <= budget:
+
+            st.info(
+                f"👀 You're getting close to your budget. "
+                f"Your current pace suggests about "
+                f"₹{projected_spending:,.0f} this month."
+            )
+
+        else:
+
+            overshoot = projected_spending - budget
+
+            st.warning(
+                f"🚨 Slow down! You're projected to overspend "
+                f"by ₹{overshoot:,.0f} this month."
+            )
     # --------------------------------------------------
     # CHART
     # --------------------------------------------------
