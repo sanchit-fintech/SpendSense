@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import sqlite3
 from datetime import date
 
 # --------------------------------------------------
@@ -12,6 +13,95 @@ st.set_page_config(
     page_icon="💸",
     layout="wide"
 )
+
+# --------------------------------------------------
+# DATABASE
+# --------------------------------------------------
+
+DB_NAME = "spendsense.db"
+
+
+def get_connection():
+    return sqlite3.connect(DB_NAME)
+
+
+def setup_database():
+
+    conn = get_connection()
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            amount REAL NOT NULL,
+            category TEXT NOT NULL,
+            description TEXT,
+            expense_date TEXT NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def add_expense(amount, category, description, expense_date):
+
+    conn = get_connection()
+
+    conn.execute(
+        """
+        INSERT INTO expenses
+        (amount, category, description, expense_date)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            amount,
+            category,
+            description,
+            str(expense_date)
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def load_expenses():
+
+    conn = get_connection()
+
+    df = pd.read_sql_query(
+        """
+        SELECT
+            id,
+            amount AS Amount,
+            category AS Category,
+            description AS Description,
+            expense_date AS Date
+        FROM expenses
+        ORDER BY expense_date DESC
+        """,
+        conn
+    )
+
+    conn.close()
+
+    return df
+
+
+def delete_expense(expense_id):
+
+    conn = get_connection()
+
+    conn.execute(
+        "DELETE FROM expenses WHERE id = ?",
+        (expense_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+setup_database()
 
 # --------------------------------------------------
 # CUSTOM UI
@@ -26,7 +116,6 @@ st.markdown("""
     padding-bottom: 4rem;
 }
 
-/* Hero */
 .hero {
     padding: 2.2rem 2rem;
     border-radius: 28px;
@@ -51,17 +140,11 @@ st.markdown("""
     opacity: 0.72;
 }
 
-/* Cards */
 .card {
     padding: 1.35rem;
     border-radius: 20px;
     background: rgba(255,255,255,0.045);
     border: 1px solid rgba(255,255,255,0.08);
-    transition: transform 0.2s ease;
-}
-
-.card:hover {
-    transform: translateY(-4px);
 }
 
 .card-title {
@@ -75,45 +158,14 @@ st.markdown("""
     margin-top: 0.4rem;
 }
 
-/* Section boxes */
-.section-box {
-    padding: 1.5rem;
-    border-radius: 22px;
-    background: rgba(255,255,255,0.035);
-    border: 1px solid rgba(255,255,255,0.07);
-}
-
-/* Buttons */
 .stButton > button {
     border-radius: 12px;
     font-weight: 700;
     min-height: 45px;
-    transition: all 0.2s ease;
-}
-
-.stButton > button:hover {
-    transform: translateY(-2px);
-}
-
-/* Inputs */
-input, textarea {
-    border-radius: 12px !important;
-}
-
-/* Progress */
-.stProgress > div > div {
-    border-radius: 20px;
 }
 
 </style>
 """, unsafe_allow_html=True)
-
-# --------------------------------------------------
-# SESSION STATE
-# --------------------------------------------------
-
-if "expenses" not in st.session_state:
-    st.session_state.expenses = []
 
 # --------------------------------------------------
 # HERO
@@ -134,7 +186,7 @@ st.markdown("""
 # BUDGET
 # --------------------------------------------------
 
-st.subheader("🎯 Set Your Monthly Budget")
+st.subheader("🎯 Monthly Budget")
 
 budget = st.number_input(
     "How much money are you working with this month?",
@@ -144,26 +196,14 @@ budget = st.number_input(
 )
 
 # --------------------------------------------------
-# CALCULATIONS
+# LOAD EXPENSES
 # --------------------------------------------------
 
-if st.session_state.expenses:
+df = load_expenses()
 
-    df = pd.DataFrame(st.session_state.expenses)
-
-    total_spent = df["Amount"].sum()
-    remaining = budget - total_spent
-    transactions = len(df)
-
-else:
-
-    df = pd.DataFrame(
-        columns=["Amount", "Category", "Description", "Date"]
-    )
-
-    total_spent = 0
-    remaining = budget
-    transactions = 0
+total_spent = df["Amount"].sum() if not df.empty else 0
+remaining = budget - total_spent
+transactions = len(df)
 
 if budget > 0:
     budget_used = min(total_spent / budget, 1)
@@ -173,7 +213,7 @@ else:
     percentage_used = 0
 
 # --------------------------------------------------
-# TOP DASHBOARD
+# DASHBOARD
 # --------------------------------------------------
 
 st.write("")
@@ -236,18 +276,11 @@ with col4:
     )
 
 # --------------------------------------------------
-# BUDGET METER
+# BUDGET HEALTH
 # --------------------------------------------------
 
 st.write("")
-st.markdown(
-    f"""
-    <div class="section-box">
-        <h3>🔋 Budget Health</h3>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+st.subheader("🔋 Budget Health")
 
 st.progress(budget_used)
 
@@ -256,19 +289,19 @@ if budget > 0:
     if percentage_used < 50:
         st.success(
             f"You're using {percentage_used:.1f}% of your budget. "
-            "You're doing great. Keep it up 🔥"
+            "You're doing great 🔥"
         )
 
     elif percentage_used < 80:
         st.info(
             f"You've used {percentage_used:.1f}% of your budget. "
-            "Time to keep an eye on those little expenses 👀"
+            "Keep an eye on those small expenses 👀"
         )
 
     elif percentage_used < 100:
         st.warning(
             f"You've used {percentage_used:.1f}% of your budget. "
-            "The month isn't over yet 😭"
+            "Careful now 😭"
         )
 
     else:
@@ -324,16 +357,16 @@ if st.button("Add Expense 🚀"):
 
     if amount > 0:
 
-        st.session_state.expenses.append(
-            {
-                "Amount": amount,
-                "Category": category,
-                "Description": description,
-                "Date": expense_date
-            }
+        add_expense(
+            amount,
+            category,
+            description,
+            expense_date
         )
 
-        st.success("Expense added! 💸")
+        st.success("Expense saved permanently! 💾")
+
+        st.rerun()
 
     else:
 
@@ -343,10 +376,7 @@ if st.button("Add Expense 🚀"):
 # INSIGHTS
 # --------------------------------------------------
 
-if st.session_state.expenses:
-
-    # Refresh dataframe after adding an expense
-    df = pd.DataFrame(st.session_state.expenses)
+if not df.empty:
 
     st.write("")
     st.subheader("🧠 Quick Insight")
@@ -357,67 +387,74 @@ if st.session_state.expenses:
         .sort_values(ascending=False)
     )
 
-    if not category_totals.empty:
+    top_category = category_totals.index[0]
+    top_amount = category_totals.iloc[0]
 
-        top_category = category_totals.index[0]
-        top_amount = category_totals.iloc[0]
+    st.info(
+        f"👀 Your biggest spending category is "
+        f"**{top_category}** at **₹{top_amount:,.0f}**."
+    )
 
-        st.info(
-            f"👀 Your biggest spending category right now is "
-            f"**{top_category}** at **₹{top_amount:,.0f}**."
-        )
     # --------------------------------------------------
-    # CHART + RECENT EXPENSES
+    # CHART
     # --------------------------------------------------
 
-    left, right = st.columns(2)
+    st.subheader("🍕 Where Is Your Money Going?")
 
-    with left:
+    fig = px.pie(
+        category_totals.reset_index(),
+        names="Category",
+        values="Amount",
+        hole=0.5
+    )
 
-        st.subheader("🍕 Where Your Money Goes")
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
 
-        fig = px.pie(
-            category_totals.reset_index(),
-            names="Category",
-            values="Amount",
-            hole=0.5
+    # --------------------------------------------------
+    # EXPENSE HISTORY
+    # --------------------------------------------------
+
+    st.subheader("🧾 Expense History")
+
+    st.dataframe(
+        df.drop(columns=["id"]),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # --------------------------------------------------
+    # DELETE EXPENSE
+    # --------------------------------------------------
+
+    st.subheader("🗑️ Delete an Expense")
+
+    expense_options = {
+        f"₹{row.Amount:.0f} — {row.Description or row.Category} ({row.Date})":
+        row.id
+        for _, row in df.iterrows()
+    }
+
+    selected_expense = st.selectbox(
+        "Select an expense",
+        list(expense_options.keys())
+    )
+
+    if st.button("Delete Selected Expense"):
+
+        delete_expense(
+            expense_options[selected_expense]
         )
 
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
+        st.success("Expense deleted.")
 
-    with right:
-
-        st.subheader("🧾 Recent Expenses")
-
-        recent_df = df.sort_values(
-            "Date",
-            ascending=False
-        ).copy()
-
-        st.dataframe(
-            recent_df,
-            use_container_width=True,
-            hide_index=True
-        )
-
-# --------------------------------------------------
-# EMPTY STATE
-# --------------------------------------------------
+        st.rerun()
 
 else:
 
-    st.write("")
-    st.markdown("""
-    <div class="section-box">
-
-    ### 👀 Your wallet is currently mysterious.
-
-    Add a few expenses and SpendSense will start figuring out:
-
-    **Where you spend → What you spend on → How fast your budget disappears**
-
-    </div>
-    """, unsafe_allow_html=True)
+    st.info(
+        "👀 Your wallet is currently mysterious. "
+        "Add your first expense and let's see where your money disappears."
+    )
